@@ -127,7 +127,7 @@ func (c *P5414E) Stream(ctx context.Context) (chan image.Image, chan error, erro
 }
 
 func (c *P5414E) getSnapshot(ctx context.Context) (image.Image, error) {
-	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s%s", c.Address, _p5414ESnapshotEndpoint), nil)
