@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"image"
+	_ "image/jpeg"
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 type P5414E struct {
@@ -19,6 +21,10 @@ const (
 	_p5414ETiltSpeed   = 5
 	_p5414EZoomSpeed   = 25
 	_p5414EPresetSpeed = 100
+
+	_p5414ESnapshotEndpoint = "/axis-cgi/jpg/image.cgi"
+	_p5414ESnapshotWidth    = 1280
+	_p5414ESnapshotHeight   = 720
 )
 
 func (c *P5414E) TiltUp(ctx context.Context) error {
@@ -94,5 +100,55 @@ func (c *P5414E) do(ctx context.Context, values url.Values) error {
 }
 
 func (c *P5414E) Stream(ctx context.Context) (chan image.Image, chan error, error) {
-	return nil, nil, nil
+	images := make(chan image.Image)
+	errs := make(chan error)
+
+	go func() {
+		ticker := time.NewTicker(125 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				image, err := c.getSnapshot(ctx)
+				if err != nil {
+					errs <- err
+					continue
+				}
+
+				images <- image
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return images, errs, nil
+}
+
+func (c *P5414E) getSnapshot(ctx context.Context) (image.Image, error) {
+	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s%s", c.Address, _p5414ESnapshotEndpoint), nil)
+	if err != nil {
+		return nil, fmt.Errorf("unable to build request: %w", err)
+	}
+
+	req.URL.RawQuery = url.Values{
+		"resolution": []string{strconv.Itoa(_p5414ESnapshotWidth) + "x" + strconv.Itoa(_p5414ESnapshotHeight)},
+	}.Encode()
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("unable to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	image, _, err := image.Decode(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("unable to decode image: %w", err)
+	}
+
+	return image, nil
 }
