@@ -23,8 +23,8 @@ const (
 	_p5414EPresetSpeed = 100
 
 	_p5414ESnapshotEndpoint = "/axis-cgi/jpg/image.cgi"
-	_p5414ESnapshotWidth    = 1280
-	_p5414ESnapshotHeight   = 720
+	_p5414ESnapshotWidth    = 640
+	_p5414ESnapshotHeight   = 360
 )
 
 func (c *P5414E) TiltUp(ctx context.Context) error {
@@ -127,7 +127,7 @@ func (c *P5414E) Stream(ctx context.Context) (chan image.Image, chan error, erro
 }
 
 func (c *P5414E) getSnapshot(ctx context.Context) (image.Image, error) {
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s%s", c.Address, _p5414ESnapshotEndpoint), nil)
