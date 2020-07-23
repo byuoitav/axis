@@ -14,8 +14,8 @@ import (
 )
 
 type P5414E struct {
-	Address            string
-	StreamMaxFrequency time.Duration
+	Address       string
+	StreamProfile string
 }
 
 const (
@@ -110,6 +110,12 @@ func (c *P5414E) Stream(ctx context.Context) (chan image.Image, chan error, erro
 		return nil, nil, fmt.Errorf("unable to build request: %w", err)
 	}
 
+	if c.StreamProfile != "" {
+		req.URL.RawQuery = url.Values{
+			"streamprofile": []string{c.StreamProfile},
+		}.Encode()
+	}
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to make request: %w", err)
@@ -127,7 +133,6 @@ func (c *P5414E) Stream(ctx context.Context) (chan image.Image, chan error, erro
 	go func() {
 		defer resp.Body.Close()
 
-		lastImage := time.Time{}
 		reader := multipart.NewReader(resp.Body, params["boundary"])
 
 		for {
@@ -140,13 +145,6 @@ func (c *P5414E) Stream(ctx context.Context) (chan image.Image, chan error, erro
 					errs <- fmt.Errorf("unable to read next frame: %w", err)
 					continue
 				}
-
-				// if this part came before we wanted another one, just drop it
-				if time.Since(lastImage) <= c.StreamMaxFrequency {
-					continue
-				}
-
-				lastImage = time.Now()
 
 				image, _, err := image.Decode(part)
 				if err != nil {
