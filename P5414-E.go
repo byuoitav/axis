@@ -32,6 +32,10 @@ const (
 	_p5414EStreamEndpoint = "/mjpg/video.mjpg"
 )
 
+func (c *P5414E) RemoteAddr() string {
+	return c.Address
+}
+
 func (c *P5414E) TiltUp(ctx context.Context) error {
 	return c.PanTilt(ctx, 0, _p5414ETiltSpeed)
 }
@@ -132,6 +136,8 @@ func (c *P5414E) Stream(ctx context.Context) (chan image.Image, chan error, erro
 
 	go func() {
 		defer resp.Body.Close()
+		defer close(images)
+		defer close(errs)
 
 		reader := multipart.NewReader(resp.Body, params["boundary"])
 
