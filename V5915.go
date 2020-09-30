@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	_ "image/jpeg"
+	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -26,6 +27,10 @@ const (
 
 	_v5915StreamEndpoint = "/mjpg/video.mjpg"
 )
+
+func (c *V5915) RemoteAddr() string {
+	return c.Address
+}
 
 func (c *V5915) TiltUp(ctx context.Context) error {
 	return c.PanTilt(ctx, 0, _v5915TiltSpeed)
@@ -99,6 +104,65 @@ func (c *V5915) do(ctx context.Context, values url.Values) error {
 	return nil
 }
 
+func (c *V5915) StreamJPEG(ctx context.Context) (chan []byte, chan error, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s%s", c.Address, _p5414EStreamEndpoint), nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to build request: %w", err)
+	}
+
+	if c.StreamProfile != "" {
+		req.URL.RawQuery = url.Values{
+			"streamprofile": []string{c.StreamProfile},
+		}.Encode()
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to make request: %w", err)
+	}
+
+	_, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil {
+		resp.Body.Close()
+		return nil, nil, fmt.Errorf("unable to parse content-type: %w", err)
+	}
+
+	jpegs := make(chan []byte)
+	errs := make(chan error)
+
+	go func() {
+		defer resp.Body.Close()
+		defer close(jpegs)
+		defer close(errs)
+
+		reader := multipart.NewReader(resp.Body, params["boundary"])
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				part, err := reader.NextPart()
+				if err != nil {
+					errs <- fmt.Errorf("unable to read next frame: %w", err)
+					continue
+				}
+
+				jpeg, err := ioutil.ReadAll(part)
+				if err != nil {
+					errs <- fmt.Errorf("unable to read part: %w", err)
+					continue
+				}
+
+				jpegs <- jpeg
+			}
+		}
+
+	}()
+
+	return jpegs, errs, nil
+}
+
 func (c *V5915) Stream(ctx context.Context) (chan image.Image, chan error, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s%s", c.Address, _v5915StreamEndpoint), nil)
 	if err != nil {
@@ -127,6 +191,8 @@ func (c *V5915) Stream(ctx context.Context) (chan image.Image, chan error, error
 
 	go func() {
 		defer resp.Body.Close()
+		defer close(images)
+		defer close(errs)
 
 		reader := multipart.NewReader(resp.Body, params["boundary"])
 
